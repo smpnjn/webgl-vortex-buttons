@@ -2,17 +2,16 @@ import * as THREE from './js/src/Three.js';
 import { rgb, loader, randomInteger } from './util.js';
 
 const config = {
-    individualItem: '.album-item', // class of individual item
-    carouselWidth: 1000, // in px
+    individualItem: '.button', // class of individual item
     carouselId: '#album-rotator', // carousel selector
     carouselHolderId: '#album-rotator-holder', // carousel should be <div id="carouselId"><div id="carouselHolderId">{items}</div></div>
     colors: [
         // Define colors for each item. If more items than colors, then first color will be used as default
         // Format { low: rgb(), high: rgb() for each color }
-        { low: rgb(0, 114, 255), high: rgb(48, 0, 255) },
-        { low: rgb(236, 166, 15), high: rgb(233, 104, 0) },
-        { low: rgb(43, 75, 235), high: rgb(213, 51, 248) },
-        { low: rgb(175, 49, 49), high: rgb(123, 16, 16) }
+        { low: rgb(0, 114, 255), high: rgb(77, 0, 255) },
+        { low: rgb(0, 12, 156), high: rgb(252, 22, 18) },
+        { low: rgb(240, 32, 54) , high: rgb(12, 35, 255) },
+        { low: rgb(10,80,40), high: rgb(22,220,12) },
     ]
 }
 
@@ -23,6 +22,7 @@ const createWave = async function(selector, colors) {
         const noise = await loader('/shaders/noise.glsl');
         const fragment = await loader('/shaders/fragment.glsl');
         const vertex = await loader('/shaders/vertex.glsl');
+        
         let i = 0;
         // For each of the selector elements
         document.querySelectorAll(selector).forEach(function(item) {
@@ -34,13 +34,13 @@ const createWave = async function(selector, colors) {
             });
 
             // Get el width and height
-            const elWidth = parseFloat(window.getComputedStyle(item).width);
-            const elHeight = parseFloat(window.getComputedStyle(item).height);
+            const elWidth = (parseFloat(window.getComputedStyle(item).width) + parseFloat(window.getComputedStyle(item).paddingLeft) * 2) + 200;
+            const elHeight = (parseFloat(window.getComputedStyle(item).height) + parseFloat(window.getComputedStyle(item).paddingTop) * 2) + 200;
 
             // Set sizes and set scene/camera
             renderer.setSize( elWidth, elHeight );
             document.body.appendChild( renderer.domElement )
-            renderer.setPixelRatio( window.devicePixelRatio );
+            renderer.setPixelRatio( elWidth/elHeight );
 
             const scene = new THREE.Scene();
             const camera = new THREE.PerspectiveCamera( 75, elWidth / elHeight, 0.1, 1000 );
@@ -54,19 +54,21 @@ const createWave = async function(selector, colors) {
                 ++i;
             }
 
-            // And use the high color for the subtext.
-            if(item.querySelector('.subtext') !== null) {
-                item.querySelector('.subtext').style.background = `rgba(${high.x},${high.y},${high.z},0.75)`;
-            }
-
             // Create a plane, and pass that through to our shaders
             let geometry = new THREE.PlaneGeometry(600, 600, 100, 100);
             let material = new THREE.ShaderMaterial({
+                // Adjusting these variables will adjust the effect
                 uniforms: {
                     u_lowColor: {type: 'v3', value: low },
                     u_highColor: {type: 'v3', value: high },
                     u_time: {type: 'f', value: 0},
+                    u_resolution: {type: 'v2', value: new THREE.Vector2(elWidth, elHeight) },
+                    u_mouse: {type: 'v2', value: new THREE.Vector2(0, 0) },
                     u_height: {type: 'f', value: 1},
+                    u_veinDefinition: {type: 'f', value: 0.25 },
+                    u_scale: {type: 'f', value: 2.3 },
+                    u_clickLength: { type: 'f', value: 1},
+                    u_rand: { type: 'f', value: randomInteger(0, 10) },
                     u_rand: {type: 'f', value: new THREE.Vector2(randomInteger(6, 10), randomInteger(8, 10)) }
                 },
                 fragmentShader: noise + fragment,
@@ -77,6 +79,97 @@ const createWave = async function(selector, colors) {
             let mesh = new THREE.Mesh(geometry, material);
             mesh.position.set(0, 0, -300);
             scene.add(mesh);
+
+            let reduceVector;
+            let increasePressure;
+            let reducePressure;
+            let prevX = 0;
+            let prevY = 0;
+            let curValueX = 0;
+            let curValueY = 0;
+            let mouseEnterX = 0;
+            let mouseEnterY = 0;
+            let mousePressure = 0;
+            item.addEventListener('pointerenter', function(e) {
+                prevX = curValueX;
+                prevY = curValueY;
+                mouseEnterX = e.pageX;
+                mouseEnterY = e.pageY;
+                clearInterval(reduceVector);
+            })
+            item.addEventListener('pointermove', function(e) {
+                if(typeof reduceVector !== "undefined") {
+                    clearInterval(reduceVector);
+                    curValueX = 0;
+                    curValueY = 0;
+                }
+                let mouseMoveX = mouseEnterX - e.pageX;
+                let mouseMoveY = mouseEnterY - e.pageY;
+                mesh.material.uniforms.u_mouse.value = new THREE.Vector2(prevX + (mouseMoveX / elWidth), prevY + (mouseMoveY / elHeight));
+            });
+
+            item.addEventListener('pointerdown', function(e) {
+                if(typeof reducePressure !== "undefined") clearInterval(reducePressure);
+                increasePressure = setInterval(function() {
+                    if(mesh.material.uniforms.u_clickLength.value < 3) {
+                        mesh.material.uniforms.u_clickLength.value += 0.03;
+                    }
+                },1000/60);
+            });
+
+            item.addEventListener('pointerup', function(e) {
+                if(typeof increasePressure !== "undefined") clearInterval(increasePressure);
+                reducePressure = setInterval(function() {
+                    if(mesh.material.uniforms.u_clickLength.value > 1) {
+                        mesh.material.uniforms.u_clickLength.value -= 0.03;
+                    }
+                },1000/60);
+            });
+
+            item.addEventListener('pointerleave', function(e) {
+                reduceVector = setInterval(function() {
+                    let startXNeg, startXPos, startYNeg, startYPos;
+                    let finishX, finishY;
+                    if(curValueX == 0 && curValueY == 0) {
+                        curValueX = mesh.material.uniforms.u_mouse.value.x;
+                        curValueY = mesh.material.uniforms.u_mouse.value.y;
+                    }
+                    if(typeof reduceVector == "function") {
+                        requestAnimationFrame(reduceVector);
+                    }
+                    if(curValueX > 0) {
+                        if(startXPos !== true) {
+                            mesh.material.uniforms.u_mouse.value = new THREE.Vector2(curValueX, curValueY);
+                        } else { finishX = true; }
+                        curValueX -= 0.005;
+                        startXNeg = true;
+                    }
+                    else if(curValueX < 0) {
+                        if(startXNeg !== true) {
+                            mesh.material.uniforms.u_mouse.value = new THREE.Vector2(curValueX, curValueY);
+                        } else { finishX = true; }
+                        curValueX += 0.005;
+                        startXPos = true;
+                    }
+                    if(curValueY > 0) {
+                        if(startYNeg !== true) {
+                            mesh.material.uniforms.u_mouse.value = new THREE.Vector2(curValueX, curValueY);
+                        } else { finishY = true; }
+                        curValueY -= 0.005;
+                        startYPos = true;
+                    }
+                    else if(curValueY < 0) {
+                        if(startYNeg !== true) {
+                            mesh.material.uniforms.u_mouse.value = new THREE.Vector2(curValueX, curValueY);
+                        } else { finishY = true; }
+                        curValueY += 0.005;
+                        startYNeg = true;
+                    }
+                    if(finishX == true && finishY == true) {
+                        clearInterval(reduceVector);
+                    }
+                }, 1000/60);
+            });
 
             // On hover effects for each item
             let enterTimer, exitTimer;
@@ -90,7 +183,7 @@ const createWave = async function(selector, colors) {
                     } else {
                         clearTimeout(enterTimer);
                     }
-                }, 10);
+                }, 1000/60);
             });
             item.addEventListener('mouseleave', function(e) {
                 if(typeof enterTimer !== "undefined") {
@@ -102,7 +195,7 @@ const createWave = async function(selector, colors) {
                     } else {
                         clearTimeout(exitTimer);
                     }
-                }, 10);
+                }, 1000/60);
             });
 
             // Render
@@ -110,12 +203,22 @@ const createWave = async function(selector, colors) {
             let t = 0;
 
             // Animate
+            let backtrack = false;
             const animate = function () {
                 requestAnimationFrame( animate );
                 renderer.render( scene, camera );
                 item.appendChild(renderer.domElement);
                 mesh.material.uniforms.u_time.value = t;
-                t = t + 0.02;
+                if(t < 10 && backtrack == false) {
+                    t = t + 0.005;
+                } else {
+                    backtrack = true;
+                    t = t - 0.005;
+                    if(t < 0) {
+                        backtrack = false;
+                    }
+                }
+                
             };
             animate();
         });
@@ -124,72 +227,4 @@ const createWave = async function(selector, colors) {
 
 document.addEventListener("DOMContentLoaded", function(e) {
     createWave(config.individualItem, config.colors);
-
-    // Get items
-    const el = document.querySelector(config.individualItem);
-    const elWidth = parseFloat(window.getComputedStyle(el).width) + parseFloat(window.getComputedStyle(el).marginLeft) + parseFloat(window.getComputedStyle(el).marginRight);
-    
-    // Track carousel
-    let mousedown = false;
-    let initialPosition = 0;
-    let selectedItem;
-    let currentDelta = 0;
-
-    document.querySelectorAll(config.carouselId).forEach(function(item) { 
-        item.style.width = `${config.carouselWidth}px`;
-    });
-    
-    document.querySelectorAll(config.carouselId).forEach(function(item) {
-        item.addEventListener('pointerdown', function(e) {
-            mousedown = true;
-            selectedItem = item;
-            initialPosition = e.pageX;
-            currentDelta = parseFloat(item.querySelector(config.carouselHolderId).style.transform.split('translateX(')[1]) || 0;
-        }); 
-    });
-    
-    const scrollCarousel = function(change, currentDelta, selectedItem) {
-        let numberThatFit = Math.floor(config.carouselWidth / elWidth);
-        let newDelta = currentDelta + change;
-        let elLength = selectedItem.querySelectorAll(config.individualItem).length - numberThatFit;
-        if(newDelta <= 0 && newDelta >= -elWidth * elLength) {
-            selectedItem.querySelector(config.carouselHolderId).style.transform = `translateX(${newDelta}px)`;
-        } else {
-            if(newDelta <= -elWidth * elLength) {
-                selectedItem.querySelector(config.carouselHolderId).style.transform = `translateX(${-elWidth * elLength}px)`;
-            } else if(newDelta >= 0) {
-                selectedItem.querySelector(config.carouselHolderId).style.transform = `translateX(0px)`;
-            }
-        }
-    }
-
-    document.body.addEventListener('pointermove', function(e) {
-        if(mousedown == true && typeof selectedItem !== "undefined") {
-            let change = -(initialPosition - e.pageX);
-            scrollCarousel(change, currentDelta, document.body);
-        }
-    });
-    
-    ['pointerup', 'mouseleave'].forEach(function(item) {
-        document.body.addEventListener(item, function(e) {
-            selectedItem = undefined;
-        });
-    });
-
-    document.querySelectorAll(config.carouselId).forEach(function(item) {
-        let trigger = 0;
-        item.addEventListener('wheel', function(e) {
-            if(trigger !== 1) {
-                ++trigger;
-            } else {
-                let change = e.deltaX * -3;
-                let currentDelta = parseFloat(item.querySelector(config.carouselHolderId).style.transform.split('translateX(')[1]) || 0;
-                scrollCarousel(change, currentDelta, item);
-                trigger = 0;
-            }
-            e.preventDefault();
-            e.stopImmediatePropagation();
-            return false;
-        });
-    });
 });

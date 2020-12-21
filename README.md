@@ -1,4 +1,4 @@
-# webgl-gradient
+# webgl-buttons
 A cool gradient effect created in WebGL and Javascript
 
-Medium article can be found here: https://medium.com/@smpnjn/apple-music-like-cards-with-webgl-6256de5aa32
+Link to medium article https://medium.com/javascript-in-plain-english/creating-interactive-webgl-buttons-dc73f8fda7b8

@@ -1,5 +1,3 @@
-#define NUM_OCTAVES 5
-
 vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
 vec2 mod289(vec2 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
 vec3 permute(vec3 x) { return mod289(((x*34.0)+1.0)*x); }
@@ -13,10 +11,21 @@ float noise(float p){
   float fc = fract(p);
     return mix(rand(fl), rand(fl + 1.0), fc);
 }
-float noise(vec2 n) {
-    const vec2 d = vec2(0.0, 1.0);
-  vec2 b = floor(n), f = smoothstep(vec2(0.0), vec2(1.0), fract(n));
-    return mix(mix(rand(b), rand(b + d.yx), f.x), mix(rand(b + d.xy), rand(b + d.yy), f.x), f.y);
+float noise (in vec2 n) {
+    vec2 i = floor(n);
+    vec2 f = fract(n);
+
+    // Four corners in 2D of a tile
+    float a = rand(i);
+    float b = rand(i + vec2(1.0, 0.0));
+    float c = rand(i + vec2(0.0, 1.0));
+    float d = rand(i + vec2(1.0, 1.0));
+
+    vec2 u = f * f * (3.0 - 2.0 * f);
+
+    return mix(a, b, u.x) +
+            (c - a)* u.y * (1.0 - u.x) +
+            (d - b) * u.x * u.y;
 }
 
 float snoise(vec2 v) {
@@ -49,19 +58,19 @@ float snoise(vec2 v) {
 }
 const mat2 m2 = mat2(0.8,-0.6,0.6,0.8);
 
-#define NB_OCTAVES 8
-#define LACUNARITY 10.0
-#define GAIN 0.5
+#define NUM_OCTAVES 10
 
-float fbm(in vec2 p) {
-    float total = 0.0,
-        frequency = 1.0,
-        amplitude = 1.0;
-    
-    for (int i = 0; i < NB_OCTAVES; i++) {
-        total += snoise(p * frequency) * amplitude;
-        frequency *= LACUNARITY;
-        amplitude *= GAIN;
-    }    
-    return total;
+float fbm ( in vec2 _st) {
+    float v = 0.0;
+    float a = 0.5;
+    vec2 shift = vec2(100.0);
+    // Rotate to reduce axial bias
+    mat2 rot = mat2(cos(0.5), sin(0.5),
+                    -sin(0.5), cos(0.50));
+    for (int i = 0; i < NUM_OCTAVES; ++i) {
+        v += a * noise(_st);
+        _st = rot * _st * 2.0 + shift;
+        a *= 0.5;
+    }
+    return v;
 }
